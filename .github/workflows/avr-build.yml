@@ -1,3 +1,4 @@
+
 name: AVR Build CI
 
 on:
@@ -23,6 +24,7 @@ jobs:
           sudo apt-get install -y gcc-avr avr-libc binutils-avr
 
       # 3. Compile MCU1_Master_code
+      # -x c tells gcc to treat the file as C despite having no .c extension
       - name: Compile MCU1_Master
         run: |
           avr-gcc \
@@ -30,6 +32,7 @@ jobs:
             -DF_CPU=8000000UL \
             -Os \
             -Wall \
+            -x c \
             -o MCU1_Master.elf \
             MCU1_Master_code
           avr-size MCU1_Master.elf
@@ -42,6 +45,7 @@ jobs:
             -DF_CPU=8000000UL \
             -Os \
             -Wall \
+            -x c \
             -o MCU2_Slave.elf \
             MCU2_Slave_code
           avr-size MCU2_Slave.elf
