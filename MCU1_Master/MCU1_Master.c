@@ -118,11 +118,11 @@
  *   [#] = Confirm number entry (alias for [A])
  *   [C] = Unused
  */
-static const char kp_code_to_char[16] = {
-
-   '1',  '2',  '3',  'A', 
+unsigned const char kp_code_to_char[16] =
+ {
+   '7',  '8',  '9',  'A', 
    '4',  '5',  '6',  'B',
-   '7',  '8',  '9',  'C',  
+   '1',  '2',  '3',  'C',  
    '*',  '0',  '#',  'D'
 };
 
@@ -136,74 +136,134 @@ static const char kp_code_to_char[16] = {
 /*
  * LCD DRIVER (4-bit)
  */
-
 static void lcd_pulse_enable(void)
 {
-    LCD_PORT |=  (1 << LCD_EN);
-    _delay_us(1);
-    LCD_PORT &= ~(1 << LCD_EN);
-    _delay_us(50);
+	LCD_PORT |=  (1 << LCD_EN);
+	_delay_us(1);
+	LCD_PORT &= ~(1 << LCD_EN);
+	_delay_us(50);
 }
 
 static void lcd_write_nibble(uint8_t nibble)
 {
-    /* Place upper nibble on D4-D7 */
-    LCD_PORT = (LCD_PORT & 0x0F) | ((nibble & 0x0F) << 4);
-    lcd_pulse_enable();
+	/* Place upper nibble on D4-D7 */
+	LCD_PORT = (LCD_PORT & 0x0F) | ((nibble & 0x0F) << 4);
+	lcd_pulse_enable();
 }
 
 static void lcd_send(uint8_t data, uint8_t is_data)
 {
-    if (is_data)
-        LCD_PORT |=  (1 << LCD_RS);   // data
-    else
-        LCD_PORT &= ~(1 << LCD_RS);   // command
+	if (is_data)
+	   LCD_PORT |=  (1 << LCD_RS);   // data
+	else
+	   LCD_PORT &= ~(1 << LCD_RS);   // command
 
-    lcd_write_nibble(data >> 4);      // high nibble first
-    lcd_write_nibble(data & 0x0F);    // low nibble
+	lcd_write_nibble(data >> 4);      // high nibble first
+	lcd_write_nibble(data & 0x0F);    // low nibble
 
-    if ((data == 0x01) || (data == 0x02))
-        _delay_ms(2);
+	if ((data == 0x01) || (data == 0x02))
+	   _delay_ms(2);
 }
+
 
 static void lcd_cmd(uint8_t cmd)  { lcd_send(cmd,  0); }
 static void lcd_char(uint8_t ch)  { lcd_send(ch,   1); }
 
 static void lcd_init(void)
 {
-    LCD_DDR |= (1<<LCD_RS)|(1<<LCD_EN)|(1<<LCD_D4)|(1<<LCD_D5)|(1<<LCD_D6)|(1<<LCD_D7);
-    _delay_ms(50);
+	LCD_DDR |= (1<<LCD_RS)|(1<<LCD_EN)|(1<<LCD_D4)|(1<<LCD_D5)|(1<<LCD_D6)|(1<<LCD_D7);
+	_delay_ms(50);
 
-    /* 4-bit init sequence */
-    lcd_write_nibble(0x03); _delay_ms(5);
-    lcd_write_nibble(0x03); _delay_ms(1);
-    lcd_write_nibble(0x03); _delay_ms(1);
-    lcd_write_nibble(0x02); _delay_ms(1);
+	/* 4-bit initialization sequence */
+	lcd_write_nibble(0x03); _delay_ms(5);
+	lcd_write_nibble(0x03); _delay_ms(1);
+	lcd_write_nibble(0x03); _delay_ms(1);
+	lcd_write_nibble(0x02); _delay_ms(1);
 
-    lcd_cmd(0x28);  // 2-line, 5x8 font
-    lcd_cmd(0x0C);  // display on, cursor off
-    lcd_cmd(0x06);  // entry mode: increment
-    lcd_cmd(0x01);  // clear
-    _delay_ms(2);
+	lcd_cmd(0x28);  // 2-line, 5x8 font
+	lcd_cmd(0x0C);  // display on, cursor off
+	lcd_cmd(0x06);  // entry mode: increment
+	lcd_cmd(0x01);  // clear
+	_delay_ms(2);
 }
+
 
 static void lcd_set_cursor(uint8_t row, uint8_t col)
 {
-    uint8_t addr = (row == 0) ? (0x80 + col) : (0xC0 + col);
-    lcd_cmd(addr);
+	uint8_t addr = (row == 0) ? (0x80 + col) : (0xC0 + col);
+	lcd_cmd(addr);
 }
 
 static void lcd_print(const char *str)
 {
-    while (*str)
-        lcd_char((uint8_t)(*str++));
+	while (*str)
+	lcd_char((uint8_t)(*str++));
 }
 
 static void lcd_clear(void)
 {
-    lcd_cmd(0x01);
-    _delay_ms(2);
+	lcd_cmd(0x01);
+	_delay_ms(2);
 }
+// New LCD functions for scrolling
+static void lcd_write_char(uint8_t ch)
+{
+	lcd_send(ch, 1);
+}
+
+void lcd_scroll_text(uint8_t row, const char* message, uint8_t width, uint16_t delay_ms)
+{
+	uint8_t msg_len = strlen(message);
+
+	if (msg_len <= width) {
+		lcd_set_cursor(row, 0);
+		lcd_print(message);
+		return;
+	}
+
+	for (uint8_t i = 0; i <= msg_len - width; i++) {
+		lcd_set_cursor(row, 0);
+		for (uint8_t j = 0; j < width; j++) {
+			lcd_write_char(message[i + j]);
+		}
+		// Loop-based delay to avoid compile-time constant restriction
+		for (uint16_t d = 0; d < delay_ms; d++)
+		_delay_ms(1);
+	}
+}
+
+void lcd_scroll_marquee(uint8_t row, const char* message, uint8_t width, uint16_t delay_ms, uint8_t repeats)
+{
+	char padded[64];
+	uint8_t msg_len = strlen(message);
+
+	if (msg_len >= 64) return; // Guard against overflow
+
+	strncpy(padded, message, 63);
+	padded[63] = '\0';
+
+	// Append trailing spaces so text scrolls cleanly off screen
+	uint8_t pad_end = msg_len + width;
+	if (pad_end > 63) pad_end = 63;
+	for (uint8_t i = msg_len; i < pad_end; i++)
+	padded[i] = ' ';
+	padded[pad_end] = '\0';
+
+	uint8_t padded_len = strlen(padded);
+
+	for (uint8_t r = 0; r < repeats; r++) {
+		for (uint8_t i = 0; i <= padded_len - width; i++) {
+			lcd_set_cursor(row, 0);
+			for (uint8_t j = 0; j < width; j++) {
+				lcd_write_char(padded[i + j]);
+			}
+			for (uint16_t d = 0; d < delay_ms; d++)
+			_delay_ms(1);
+		}
+	}
+}
+
+
 
 /* 
  * I2C (TWI) DRIVER — Master
@@ -293,7 +353,7 @@ static char keypad_scan(void)
     if (!(KP_PIN & (1 << KP_DA_BIT)))
         return 0;
 
-    /*  Step 2: read the 4-bit key code (active-HIGH, PA0–PA3) ?? */
+    /*  Step 2: read the 4-bit key code (active-HIGH, PA0–PA3) ??; KP_CODE_MASK isolates the bits from the other pins  */
     uint8_t code = KP_PIN & KP_CODE_MASK;   /* 0x00–0x0F */
 
     /*  Step 3: map code to ASCII character ?? */
@@ -322,44 +382,56 @@ static char keypad_scan(void)
  * Displays digits live on LCD row `lcd_row`.
  * Returns the entered value, or 0 on cancel/empty.
  */
+
+
+
+
+
+
+//////////////////// Keypad Reading ////////////////
 static uint16_t keypad_read_number(uint8_t lcd_row)
 {
-    char buf[6] = {0};
-    uint8_t idx = 0;
+	char buf[6] = {0}; //String buffer that holds up to 5 digits (plus the null terminator)
+	uint8_t idx = 0; //Keeps track of the number of digits entered
 
-    lcd_set_cursor(lcd_row, 0);
-    lcd_print("[*]=DEL [#]=OK  ");
+	lcd_set_cursor(lcd_row, 0);
+	lcd_print("[*]=DEL [#]=OK  ");
 
-    while (1) {
-        char key = keypad_scan();
-        if (!key) continue;
+	// This section continuously checks if a key has been pressed
+	while (1) {
+		char key = keypad_scan();
+		if (!key) continue; // If no key is pressed, break out of the loop
 
-        if (key >= '0' && key <= '9' && idx < 5) {
-            /* Digit — append to buffer */
-            buf[idx++] = key;
-            buf[idx]   = '\0';
-            lcd_set_cursor(lcd_row, 0);
-            lcd_print("                ");
-            lcd_set_cursor(lcd_row, 0);
-            lcd_print(buf);
+		//This means, if a key is pressed and there is space left, append the value to the buffer
+		if (key >= '0' && key <= '9' && idx < 5) {
+			/* Digit — append to buffer */
+			buf[idx++] = key;
+			buf[idx]   = '\0';
+			lcd_set_cursor(lcd_row, 0);
+			lcd_print("                ");
+			lcd_set_cursor(lcd_row, 0);
+			lcd_print(buf);
 
-        } else if (key == '*' && idx > 0) {
-            /* [*] = backspace */
-            buf[--idx] = '\0';
-            lcd_set_cursor(lcd_row, 0);
-            lcd_print("                ");
-            lcd_set_cursor(lcd_row, 0);
-            lcd_print(buf);
+			//This is basically a delete key
+			} else if (key == '*' && idx > 0) {
+			/* [*] = backspace */
+			buf[--idx] = '\0';
+			lcd_set_cursor(lcd_row, 0);
+			lcd_print("                ");
+			lcd_set_cursor(lcd_row, 0);
+			lcd_print(buf);
 
-        } else if ((key == '#' || key == 'A') && idx > 0) {
-            /* [#] or [A] = confirm */
-            return (uint16_t)atoi(buf);
+			//Confirm key - converts the buffer string into an integer
+			} else if (key == '#' && idx > 0) {
+			/* #= confirm */
+			return (uint16_t)atoi(buf);
 
-        } else if (key == 'D') {
-            /* [D] = cancel / emergency stop — return 0, main loop handles */
-            return 0;
-        }
-    }
+			//Emergency stop
+			} else if (key == 'D') {
+			/* [D] = cancel / emergency stop — return 0, main loop handles */
+			return 0;
+		}
+	}
 }
 
 /* 
@@ -376,15 +448,15 @@ int main(void)
     lcd_print("Motor Control");
     lcd_set_cursor(1, 0);
     lcd_print("A=Spd B=Pos D=Stop");
-    _delay_ms(2000);
+    _delay_ms(100);
 
     while (1) {
         /*  Prompt user for mode  */
         lcd_clear();
         lcd_set_cursor(0, 0);
-        lcd_print("A=Speed B=Pos");
+        lcd_print("A=Speed; B=Pos ;");
         lcd_set_cursor(1, 0);
-        lcd_print("D=E-Stop");
+        lcd_print("D = Stop!!");
 
         char mode_key = 0;
         while (mode_key != 'A' && mode_key != 'B' && mode_key != 'D')
@@ -408,27 +480,30 @@ int main(void)
             lcd_set_cursor(0, 0);
             lcd_print("SPEED MODE");
             lcd_set_cursor(1, 0);
-            lcd_print("RPM (max 3000):");
-            _delay_ms(800);
+            lcd_scroll_text(1,"RPM (max 5000):",16,300);
+            _delay_ms(200);
+			lcd_clear();
+			lcd_set_cursor(0, 0);
+			lcd_print("Enter RPM:");
+		    uint16_t rpm = keypad_read_number(1); // The 1 is used to test the function i.e read the keypad and start with 1
 
-            lcd_clear();
-            lcd_set_cursor(0, 0);
-            lcd_print("Enter RPM:");
-            uint16_t rpm = keypad_read_number(1);
+			if (rpm > 5000) rpm = 5000;  // cap the speed at 5000rpm
 
-            if (rpm > 3000) rpm = 3000;  // clamp
+			lcd_clear();
+			lcd_scroll_text(0,"Setting the speed.....",16,50);
+			_delay_ms(100);
+			
+			lcd_clear();
+			lcd_set_cursor(0, 0);
+			lcd_print("Speed:");
+			char tmp[8];
+			itoa(rpm, tmp, 10); // Changes the value obtained from the rpm into a string stored in the tmp, 10 means base 10
+			lcd_set_cursor(1, 0);
+			lcd_print(tmp);
+			
 
-            lcd_clear();
-            lcd_set_cursor(0, 0);
-            lcd_print("Speed set:");
-            char tmp[8];
-            itoa(rpm, tmp, 10);
-            lcd_set_cursor(1, 0);
-            lcd_print(tmp);
-            lcd_print(" RPM");
-
-            i2c_send_command(MODE_SPEED, rpm);
-            _delay_ms(1500);
+			i2c_send_command(MODE_SPEED, rpm);
+			_delay_ms(1000);
 
         } else if (mode_key == 'B') {
             /*  POSITION MODE  */
