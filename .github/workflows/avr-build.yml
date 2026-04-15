@@ -1,0 +1,62 @@
+name: AVR Build CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    name: Compile AVR C Code (ATmega32)
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install avr-gcc toolchain
+      - name: Install AVR toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-avr avr-libc binutils-avr
+
+      # 3. Compile MCU1_Master_code
+      - name: Compile MCU1_Master
+        run: |
+          avr-gcc \
+            -mmcu=atmega32 \
+            -DF_CPU=8000000UL \
+            -Os \
+            -Wall \
+            -o MCU1_Master.elf \
+            MCU1_Master_code
+          avr-size MCU1_Master.elf
+
+      # 4. Compile MCU2_Slave_code
+      - name: Compile MCU2_Slave
+        run: |
+          avr-gcc \
+            -mmcu=atmega32 \
+            -DF_CPU=8000000UL \
+            -Os \
+            -Wall \
+            -o MCU2_Slave.elf \
+            MCU2_Slave_code
+          avr-size MCU2_Slave.elf
+
+      # 5. Generate .hex files (ready for flashing)
+      - name: Generate HEX files
+        run: |
+          avr-objcopy -O ihex MCU1_Master.elf MCU1_Master.hex
+          avr-objcopy -O ihex MCU2_Slave.elf MCU2_Slave.hex
+
+      # 6. Upload HEX files as build artifacts
+      - name: Upload HEX files
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-hex
+          path: |
+            MCU1_Master.hex
+            MCU2_Slave.hex
