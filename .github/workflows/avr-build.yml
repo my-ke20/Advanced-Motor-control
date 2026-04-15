@@ -1,4 +1,3 @@
-
 name: AVR Build CI
 
 on:
@@ -23,8 +22,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-avr avr-libc binutils-avr
 
-      # 3. Compile MCU1_Master_code
-      # -x c tells gcc to treat the file as C despite having no .c extension
+      # 3. Compile MCU1_Master/MCU1_Master.c
       - name: Compile MCU1_Master
         run: |
           avr-gcc \
@@ -32,12 +30,11 @@ jobs:
             -DF_CPU=8000000UL \
             -Os \
             -Wall \
-            -x c \
             -o MCU1_Master.elf \
-            MCU1_Master_code
+            MCU1_Master/MCU1_Master.c
           avr-size MCU1_Master.elf
 
-      # 4. Compile MCU2_Slave_code
+      # 4. Compile MCU2_Slave/MCU2_Slave.c
       - name: Compile MCU2_Slave
         run: |
           avr-gcc \
@@ -45,9 +42,8 @@ jobs:
             -DF_CPU=8000000UL \
             -Os \
             -Wall \
-            -x c \
             -o MCU2_Slave.elf \
-            MCU2_Slave_code
+            MCU2_Slave/MCU2_Slave.c
           avr-size MCU2_Slave.elf
 
       # 5. Generate .hex files (ready for flashing)
