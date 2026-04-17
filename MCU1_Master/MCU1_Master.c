@@ -68,7 +68,7 @@
 #define I2C_SLAVE_ADDR   0x10          // MCU2 slave address (7-bit)
 #define I2C_FREQ         100000UL      // 100 kHz
 
-/* TWI bit-rate register value */
+/* TWI bit-rate register value calculation */
 #define TWBR_VAL  ((F_CPU / I2C_FREQ - 16) / 2)
 
 /*
@@ -129,9 +129,9 @@ unsigned const char kp_code_to_char[16] =
 /*
  * Mode constants (must match MCU2)
  */
-#define MODE_SPEED     'S'
-#define MODE_POSITION  'P'
-#define MODE_STOP      'E'   // Emergency stop
+#define MODE_SPEED     'S'	//Speed
+#define MODE_POSITION  'P'	//Position
+#define MODE_STOP      'E'  // Emergency stop
 
 /*
  * LCD DRIVER (4-bit)
@@ -154,15 +154,15 @@ static void lcd_write_nibble(uint8_t nibble)
 static void lcd_send(uint8_t data, uint8_t is_data)
 {
 	if (is_data)
-	   LCD_PORT |=  (1 << LCD_RS);   // data
+	LCD_PORT |=  (1 << LCD_RS);   // data
 	else
-	   LCD_PORT &= ~(1 << LCD_RS);   // command
+	LCD_PORT &= ~(1 << LCD_RS);   // command
 
 	lcd_write_nibble(data >> 4);      // high nibble first
 	lcd_write_nibble(data & 0x0F);    // low nibble
 
 	if ((data == 0x01) || (data == 0x02))
-	   _delay_ms(2);
+	_delay_ms(2);
 }
 
 
@@ -180,7 +180,7 @@ static void lcd_init(void)
 	lcd_write_nibble(0x03); _delay_ms(1);
 	lcd_write_nibble(0x02); _delay_ms(1);
 
-	lcd_cmd(0x28);  // 2-line, 5x8 font
+	lcd_cmd(0x28);  // 2-line, 5x8 matrix, 4 bit mode
 	lcd_cmd(0x0C);  // display on, cursor off
 	lcd_cmd(0x06);  // entry mode: increment
 	lcd_cmd(0x01);  // clear
@@ -190,7 +190,7 @@ static void lcd_init(void)
 
 static void lcd_set_cursor(uint8_t row, uint8_t col)
 {
-	uint8_t addr = (row == 0) ? (0x80 + col) : (0xC0 + col);
+	uint8_t addr = (row == 0) ? (0x80 + col) : (0xC0 + col); //If the row is 0, place the cursor on the first row, else place it on the second row
 	lcd_cmd(addr);
 }
 
@@ -233,31 +233,33 @@ void lcd_scroll_text(uint8_t row, const char* message, uint8_t width, uint16_t d
 }
 
 void lcd_scroll_marquee(uint8_t row, const char* message, uint8_t width, uint16_t delay_ms, uint8_t repeats)
-{
-	char padded[64];
-	uint8_t msg_len = strlen(message);
+{	
+	/* Buffer setup and control guard */
+	char padded[64]; //This is where the modified (padded) version of the message will be built
+	uint8_t msg_len = strlen(message); // Measures the length of the input string excluding the null terminator. This length drives all the padding calculations below.
+	if (msg_len >= 64) return; // Overflow GUARD
+	strncpy(padded, message, 63); //Copies up to 63 characters of message into padded
+	padded[63] = '\0'; //Forces a null terminator at the very last position
 
-	if (msg_len >= 64) return; // Guard against overflow
-
-	strncpy(padded, message, 63);
-	padded[63] = '\0';
-
-	// Append trailing spaces so text scrolls cleanly off screen
-	uint8_t pad_end = msg_len + width;
-	if (pad_end > 63) pad_end = 63;
-	for (uint8_t i = msg_len; i < pad_end; i++)
-	padded[i] = ' ';
-	padded[pad_end] = '\0';
-
-	uint8_t padded_len = strlen(padded);
-
-	for (uint8_t r = 0; r < repeats; r++) {
-		for (uint8_t i = 0; i <= padded_len - width; i++) {
-			lcd_set_cursor(row, 0);
-			for (uint8_t j = 0; j < width; j++) {
-				lcd_write_char(padded[i + j]);
+	/* Append trailing spaces so text scrolls cleanly off screen */
+	uint8_t pad_end = msg_len + width; //Calculates where the spaces should end
+	if (pad_end > 63) pad_end = 63; //Another overflow GUARD
+	for (uint8_t i = msg_len; i < pad_end; i++) //Fills positions from msg_len up to pad_end with space characters ' ', then plants a new null terminator at pad_end.
+		padded[i] = ' ';
+		padded[pad_end] = '\0';
+		
+	/*The scrolling part*/
+	uint8_t padded_len = strlen(padded); //Measures the final length of the padded string (message + trailing spaces). This is the total distance the scroll must travel.
+	for (uint8_t r = 0; r < repeats; r++) //Simply runs the entire animation repeats times. If repeats = 3, the full marquee plays through 3 times.
+	{
+		for (uint8_t i = 0; i <= padded_len - width; i++) //i is the sliding window position — the index into padded where the current visible frame starts. It advances by 1 each iteration, moving the text one character to the left.
+		 {
+			lcd_set_cursor(row, 0); 
+			for (uint8_t j = 0; j < width; j++) //For each scroll position i, this loop writes exactly width characters to the LCD, starting at column 0 of the target row.
+			{
+				lcd_write_char(padded[i + j]); //This is the key expression - i slides the window while j walks it
 			}
-			for (uint16_t d = 0; d < delay_ms; d++)
+			for (uint16_t d = 0; d < delay_ms; d++) //Pauses between each scroll step
 			_delay_ms(1);
 		}
 	}
@@ -269,47 +271,47 @@ void lcd_scroll_marquee(uint8_t row, const char* message, uint8_t width, uint16_
  * I2C (TWI) DRIVER — Master
  */
 
-static void i2c_init(void)
+static void i2c_init(void) /* I2C initialize function */
 {
     TWSR = 0x00;               // prescaler = 1
     TWBR = (uint8_t)TWBR_VAL;
     TWCR = (1 << TWEN);        // enable TWI
 }
 
-static uint8_t i2c_start(uint8_t addr_rw)
+static uint8_t i2c_start(uint8_t addr_rw)  /* I2C start function */ 
 {
-    TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN);
-    while (!(TWCR & (1<<TWINT)));
-    if ((TWSR & 0xF8) != 0x08) return 0;   // START not sent
+    TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN);// Enable TWI, generate start condition and clear interrupt flag 
+    while (!(TWCR & (1<<TWINT))); // Wait until TWI finish its current job (start condition) 
+    if ((TWSR & 0xF8) != 0x08) return 0;   ///* Check whether start condition transmitted successfully or not?  If not then return 0 to indicate start condition fail
 
-    TWDR = addr_rw;
-    TWCR = (1<<TWINT)|(1<<TWEN);
-    while (!(TWCR & (1<<TWINT)));
-    uint8_t status = TWSR & 0xF8;
-    return (status == 0x18) ? 1 : 0;       // SLA+W ACK?
+    TWDR = addr_rw; //If yes then write SLA+W in TWI data register 
+    TWCR = (1<<TWINT)|(1<<TWEN); // Enable TWI and clear interrupt flag
+    while (!(TWCR & (1<<TWINT))); // Wait until TWI finish its current job (Write operation)
+    uint8_t status = TWSR & 0xF8; // Read TWI status register with masking lower three bits
+    return (status == 0x18) ? 1 : 0;       //  Check whether SLA+W transmitted & ack received or not?  If yes then return 1 to indicate ack received; ready to accept data elseif return 0 to indicate the SLA+W failed
 }
 
-static uint8_t i2c_write(uint8_t data)
+static uint8_t i2c_write(uint8_t data) /* I2C write function */ 
 {
-    TWDR = data;
-    TWCR = (1<<TWINT)|(1<<TWEN);
-    while (!(TWCR & (1<<TWINT)));
-    return ((TWSR & 0xF8) == 0x28) ? 1 : 0;
+    TWDR = data; // Copy data in TWI data register
+    TWCR = (1<<TWINT)|(1<<TWEN); // Enable TWI and clear interrupt flag
+    while (!(TWCR & (1<<TWINT))); // Wait until TWI finish its current job (Write operation)
+    return ((TWSR & 0xF8) == 0x28) ? 1 : 0; // Check weather data transmitted & ack received or not?  If yes then return 0 to indicate ack received 
 }
 
-static void i2c_stop(void)
+static void i2c_stop(void) /* I2C stop function */ 
 {
-    TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWSTO);
+    TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWSTO); //Enable TWI, generate stop condition and clear interrupt flag
     _delay_us(50);
 }
 
 /* Send mode byte + 16-bit value to slave */
 static void i2c_send_command(uint8_t mode, uint16_t value)
 {
-    if (!i2c_start((I2C_SLAVE_ADDR << 1) | 0)) return;  // SLA+W
+    if (!i2c_start((I2C_SLAVE_ADDR << 1) | 0)) return;  // If i2c_start fails (returns 0/false — e.g. bus busy, no ACK from slave), the function immediately returns, aborting the transaction. This is a basic error guard.
     i2c_write(mode);
-    i2c_write((uint8_t)(value >> 8));    // high byte
-    i2c_write((uint8_t)(value & 0xFF));  // low byte
+    i2c_write((uint8_t)(value >> 8));    // high byte transmission and 8 bit casting
+    i2c_write((uint8_t)(value & 0xFF));  // low byte transmission and 8 bit casting
     i2c_stop();
 }
 
@@ -459,7 +461,7 @@ int main(void)
         lcd_print("D = Stop!!");
 
         char mode_key = 0;
-        while (mode_key != 'A' && mode_key != 'B' && mode_key != 'D')
+        while (mode_key != 'A' && mode_key != 'B' && mode_key != 'D') // While keys:A, B and D are not pressed, scan the keypad
             mode_key = keypad_scan();
 
         if (mode_key == 'D') {
@@ -469,7 +471,7 @@ int main(void)
             lcd_print("EMERGENCY STOP");
             lcd_set_cursor(1, 0);
             lcd_print("Motor halted!");
-            i2c_send_command(MODE_STOP, 0);
+            i2c_send_command(MODE_STOP, 0); //Transmit the emergency stop command to the MCU2
             _delay_ms(3000);
             continue;
         }
@@ -480,7 +482,7 @@ int main(void)
             lcd_set_cursor(0, 0);
             lcd_print("SPEED MODE");
             lcd_set_cursor(1, 0);
-            lcd_scroll_text(1,"RPM (max 5000):",16,300);
+            lcd_scroll_text(1,"RPM (max 5000):",16,300); //The text scrolls after an interval of 300ms
             _delay_ms(200);
 			lcd_clear();
 			lcd_set_cursor(0, 0);
@@ -491,7 +493,7 @@ int main(void)
 
 			lcd_clear();
 			lcd_scroll_text(0,"Setting the speed.....",16,50);
-			_delay_ms(100);
+			
 			
 			lcd_clear();
 			lcd_set_cursor(0, 0);
@@ -500,9 +502,11 @@ int main(void)
 			itoa(rpm, tmp, 10); // Changes the value obtained from the rpm into a string stored in the tmp, 10 means base 10
 			lcd_set_cursor(1, 0);
 			lcd_print(tmp);
+			lcd_set_cursor(1,5);
+			lcd_print("RPM");
 			
 
-			i2c_send_command(MODE_SPEED, rpm);
+			i2c_send_command(MODE_SPEED, rpm); //Transmit speed to MCU2
 			_delay_ms(1000);
 
         } else if (mode_key == 'B') {
@@ -528,7 +532,7 @@ int main(void)
             lcd_print(tmp);
             lcd_print(" rev");
 
-            i2c_send_command(MODE_POSITION, revs);
+            i2c_send_command(MODE_POSITION, revs); //Transmit position to MCU2
             _delay_ms(1500);
         }
     }
